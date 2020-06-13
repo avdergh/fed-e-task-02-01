@@ -1,19 +1,28 @@
 // 实现这个项目的构建任务
 const gulp = require('gulp')
 const del = require('del')
+const minimist = require('minimist')
+const Comb = require('csscomb')
+const standard = require('standard')
 const browserSync = require('browser-sync').create()
 const plugins = require('gulp-load-plugins')()
 const reload = browserSync.reload
 const config = require('./config')
+const argv = minimist(process.argv.slice(2))
 
+const isProd = argv.production
 // 清空
 const clean = () => {
   return del(['temp', 'dist'])
 }
 
-// lint
-const lint = () => {
-
+// lint scss,js代码格式化
+const lint = (done) => {
+  const comb = new Comb(require('./.csscomb.json'))
+  comb.processPath('src/assets/styles')
+  standard.lintFiles('src/assets/scripts/**/*.js', {
+    fix: true
+  }, done)
 }
 
 // style编译
@@ -67,7 +76,7 @@ const extra = () => {
 }
 
 // serve
-const serve = () => {
+const devServe = () => {
   browserSync.init({
     notify: false,
     server: {
@@ -81,6 +90,29 @@ const serve = () => {
   gulp.watch('src/assets/styles/*.scss', style)
   gulp.watch('src/assets/scripts/*.js', script)
   gulp.watch('src/*.html', html)
+  gulp.watch([
+    'src/assets/images/**',
+    'src/assets/fonts/**',
+    'public/**'
+  ], reload({ stream: true }))
+}
+// 资源静态服务
+const distServer = () => {
+  browserSync.init({
+    notify: false,
+    server: {
+      baseDir: ['dist']
+    }
+  })
+}
+
+// publish
+
+const publish = () => {
+  return gulp.src('dist/**')
+    .pipe(plugins.ghPages({
+      cacheDir: `temp/.publish`
+    }));
 }
 
 // compile
@@ -99,20 +131,29 @@ const useref = () => {
     .pipe(gulp.dest('dist'));
 }
 
-
-// start
-const start = gulp.series(compile, serve)
-// build
-const build = gulp.series(compile, gulp.parallel(useref, image, font, extra))
-// deploy
-const deploy = () => {
-
+const measure = () => {
+  return gulp
+    .src('**', { cwd: 'dist' })
+    .pipe(
+      plugins.size({
+        title: `${isProd ? 'Prodcuction' : 'Development'} mode build`,
+        showFiles: true,
+        gzip: true
+      })
+    )
 }
+
+// serve
+const serve = gulp.series(compile, devServe)
+// build
+const build = gulp.series(clean, compile, gulp.parallel(useref, image, font, extra), measure)
+// 打包测试预览
+const start = gulp.series(build, distServer)
+// deploy 发布到github中
+const deploy = gulp.series(build, publish)
 module.exports = {
   clean,
   lint,
-  image,
-  font,
   serve,
   build,
   start,
